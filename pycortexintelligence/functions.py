@@ -77,8 +77,8 @@ def _execution_history(execution_id, loadmanager, headers):
     return response
 
 
-def upload_local_2_cube(cubo_id,
-                        file_path,
+def upload_file_to_cube(cubo_id,
+                        file_like_object,
                         auth_endpoint,
                         credentials,
                         loadmanager=LOADMANAGER,
@@ -103,7 +103,7 @@ def upload_local_2_cube(cubo_id,
     """
     :param timeout:
     :param cubo_id:
-    :param file_path:
+    :param file_like_object:
     :param auth_endpoint:
     :param credentials:
     :param loadmanager:
@@ -134,7 +134,7 @@ def upload_local_2_cube(cubo_id,
         endpoint,
         headers=headers,
         data=data_format,
-        files={"file": open(file_path, "rb")},
+        files={"file": file_like_object},
     )
 
     # ================ Start Data Input Process ===========================
@@ -170,6 +170,12 @@ def upload_to_cortex(**kwargs):
     plataform_url = kwargs.get('plataform_url')
     username = kwargs.get('username')
     password = kwargs.get('password')
+    file_like_object = kwargs.get('file_like_object')
+    if not file_path and not file_like_object:
+        raise ValueError(INVALID_FILES_ERROR, f'FORAM PASSADOS: {file_path}, {file_like_object}')
+    if not file_like_object:
+        file_like_object = open(file_path, "rb")
+
     data_format = kwargs.get('data_format', {
         "charset": "UTF-8",
         "quote": "\"",
@@ -193,12 +199,12 @@ def upload_to_cortex(**kwargs):
         raise ValueError(FORMAT_TIMEOUT)
 
     # Verify Kwargs
-    if cubo_id and file_path and plataform_url and username and password:
+    if cubo_id and file_like_object and plataform_url and username and password:
         auth_endpoint = _make_url_auth(plataform_url)
         credentials = {"login": str(username), "password": str(password)}
-        execution_id, headers = upload_local_2_cube(
+        execution_id, headers = upload_file_to_cube(
             cubo_id=cubo_id,
-            file_path=file_path,
+            file_like_object=file_like_object,
             auth_endpoint=auth_endpoint,
             credentials=credentials,
             data_format=data_format,
