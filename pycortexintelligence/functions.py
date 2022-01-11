@@ -1,5 +1,7 @@
 import datetime
 
+from io import BytesIO
+
 import requests
 
 from pycortexintelligence.core.messages import *
@@ -247,7 +249,10 @@ def download_from_cortex(**kwargs):
         "delimiter": ",",
     })
     if not file_like_object:
-        file_like_object = open(file_path, 'wb')
+        if isinstance(file_path, BytesIO):
+            file_like_object = BytesIO()
+        else:
+            file_like_object = open(file_path, 'wb')
     filters = kwargs.get('filters', None)
     if cubo_id and cubo_name:
         raise ValueError(DOWNLOAD_ERROR_JUST_ID_OR_NAME)
@@ -321,6 +326,8 @@ def download_from_cortex(**kwargs):
             for chunk in r.iter_content(chunk_size=8192):
                 file_like_object.write(chunk)
             file_like_object.flush()
+        if isinstance(file_like_object, BytesIO):
+            return file_like_object
     else:
         raise ValueError(ERROR_ARGUMENTS_VALIDATION)
 
