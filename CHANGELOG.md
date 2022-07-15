@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [0.0.21] - 2021-07-14
+
+### Added
+- New method for validating downloaded data from platform based on Content-Rows included in response headers.
+
+## [0.0.20] - 2021-01-11
+
+### Added
+- Support to download from platform to handle data in memory using BytesIO.
+
 ## [Unreleased]
 
 ### Added
