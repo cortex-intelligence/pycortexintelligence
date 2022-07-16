@@ -325,7 +325,11 @@ def download_from_cortex(**kwargs):
             payload['headers'] = columns_download
 
         with requests.get(download_endpoint, stream=True, headers=headers, params=payload) as r:
-            content_rows = r.headers["Content-Rows"]
+            try:
+                content_rows = r.headers["Content-Rows"]
+            except KeyError:
+                print(r.headers)
+                raise Exception('No Content-Rows found on response headers.')
             r.raise_for_status()
             for chunk in r.iter_content(chunk_size=8192):
                 file_like_object.write(chunk)
