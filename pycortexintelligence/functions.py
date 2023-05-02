@@ -19,7 +19,7 @@ def _make_download_url(plataform_url):
 
 class LoadExecution:
     def __init__(self, loadmanager_url, auth_headers, execution_id, timeout):
-        self.loadManager = loadmanager_url
+        self.loadmanager = loadmanager_url
         self.headers = auth_headers
         self.id = execution_id
         self.timeout = timeout
@@ -66,29 +66,29 @@ class LoadExecution:
 
 class LoadManager:
     def __init__(self, plataform_url, username, password, useSsl = True):
-        self.protocol = "https" if useSSl else "http"
+        self.protocol = "https" if useSsl else "http"
         self.plataform_url = plataform_url
         self.username = username
         self.password = password
-        self.loadManager = self.get_url()
+        self.loadmanager = self.get_url()
         self.credentials = self.get_platform_token()
     
-    def get_platform_token(self, platform_url, username, password):
+    def get_platform_token(self):
         url = "{}://{}/service/integration-authorization-service.login".format(self.protocol, self.plataform_url)
         credentials = {"login": str(self.username), "password": str(self.password)}
-        response = request.post(url, credentials)
+        response = requests.post(url, json=credentials)
         check_response(response)
         response_json = response.json()
         return {"Authorization": "Bearer " + response_json["key"]}
     
-    def get_url(self, platform_url):
-        url =  "{}://{}/service/platform-collector-information/".format(self.protocol, plataform_url)
-        response = request.get(url)
+    def get_url(self):
+        url =  "{}://{}/service/platform-collector-information/".format(self.protocol, self.plataform_url)
+        response = requests.get(url)
         check_response(response)
         response_json = response.json()
-        if response_json["loadManager.uri"] is None:
-            raise Exception("LoadManager not supported!")
-        return response_json["loadManager.uri"]
+        if "loadManager.url" in response_json:
+            return response_json["loadManager.url"]
+        raise Exception("LoadManager not supported!")
     
     def create_load_execution(self, destination_id, file_processing_timeout, ignore_validation_errors):
         endpoint = "{}/execution".format(self.loadmanager)
@@ -100,7 +100,7 @@ class LoadManager:
         response = requests.post(endpoint, headers=self.credentials, json=content)
         check_response(response)
         execution_id = response.json()["executionId"]
-        return LoadExecution(self.loadManager, self.credentials, execution_id, file_processing_timeout)
+        return LoadExecution(self.loadmanager, self.credentials, execution_id, file_processing_timeout)
 
 
 def upload_local_2_cube(destination_id,
@@ -113,7 +113,7 @@ def upload_local_2_cube(destination_id,
                         execution_parameters={
                             'name': 'LoadManager PyCortex',
                         },
-                        ignore_validation_errors
+                        ignore_validation_errors=False
                         ):
     """
     :param timeout:
@@ -127,7 +127,7 @@ def upload_local_2_cube(destination_id,
     """
 
     # =============== New LoadManager instance =================
-    load_manager = LoadManager(plataform_url, username, password)
+    load_manager = LoadManager(plataform_url, username, password, False)
 
     # ================ Get New Execution =======================
     load_execution = load_manager.create_load_execution(destination_id, file_processing_timeout, ignore_validation_errors)
