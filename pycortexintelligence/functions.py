@@ -46,7 +46,7 @@ class LoadExecution:
             history = self.execution_history()
             complete = history['completed']
 
-        if(history['success'] == True):
+        if('success' in history and history['success'] == True):
             print("Done!")
         else:
             print("Error on Load execution id: " + history['executionId'])
