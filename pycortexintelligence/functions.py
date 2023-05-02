@@ -90,12 +90,13 @@ class LoadManager:
             return response_json["loadManager.url"]
         raise Exception("LoadManager not supported!")
     
-    def create_load_execution(self, destination_id, file_processing_timeout, ignore_validation_errors):
+    def create_load_execution(self, destination_id, file_processing_timeout, ignore_validation_errors, execution_parameters):
         endpoint = "{}/execution".format(self.loadmanager)
         content = {
             "destinationId": destination_id,
             "fileProcessingTimeout": file_processing_timeout,
             "ignoreValidationErrors": ignore_validation_errors
+            , **execution_parameters
         }
         response = requests.post(endpoint, headers=self.credentials, json=content)
         check_response(response)
@@ -130,7 +131,7 @@ def upload_local_2_cube(destination_id,
     load_manager = LoadManager(plataform_url, username, password, False)
 
     # ================ Get New Execution =======================
-    load_execution = load_manager.create_load_execution(destination_id, file_processing_timeout, ignore_validation_errors)
+    load_execution = load_manager.create_load_execution(destination_id, file_processing_timeout, ignore_validation_errors, execution_parameters)
 
     # ================ Send files =============================
     load_execution.send_file(file_path, data_format)
