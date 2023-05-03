@@ -42,6 +42,28 @@ execution_parameters = {
 import logging.config
 from pycortexintelligence import functions as cortexfunctions
 
+## Eh possivel utilizar o Graylog com o logging
+## Podemos criar um filter para adicionar os campos 
+## adicionais Application e tenant
+
+class ApplicationTenantFilter(logging.Filter):
+    def __init__(self, application_name, tenant):
+        # In an actual use case would dynamically get this
+        # (e.g. from memcache)
+        self.Application = application_name
+        self.tenant = tenant
+
+    def filter(self, record):
+        record.Application = self.Application
+        record.tenant = self.tenant
+        return True
+
+## Criamos uma instancia do filter
+cortexFilter = ApplicationTenantFilter(
+    'App_Using_Pycortexintelligence',
+    'some_tenant'
+)
+
 ## Configurando o logging do sistema
 LOGGING = {
     'version': 1,
@@ -55,10 +77,19 @@ LOGGING = {
         'console':{
             'class': 'logging.StreamHandler',
             'formatter': 'verbose'
+        },
+        ## Entrada do handler do Graylog utilizando graypy
+        ## Para utilizar esse handler eh necessario instalar o graypy 
+        ## no requirements.txt de sua aplicacao ou com pip install graypy
+        'graypy': {
+            'class': 'graypy.GELFUDPHandler',
+            'host': 'localhost',
+            'port': 12201,
+            'filters': [cortexFilter]
         }
     },
     "root": {
-        "handlers": ["console"],
+        "handlers": ["console", "graypy"],
         "level": "DEBUG",
     }
 }

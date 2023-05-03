@@ -49,7 +49,7 @@ class LoadExecution:
             complete = history['completed']
 
         if('success' in history and history['success'] == True):
-            logger.info("Done!")
+            logger.info("LoadExecution '{}' finished with success!".format(self.id))
         else:
             logger.error("Error on Load execution id: " + history['executionId'])
             errors = history['errors']
