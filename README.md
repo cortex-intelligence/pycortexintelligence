@@ -61,7 +61,7 @@ class ApplicationTenantFilter(logging.Filter):
 ## Criamos uma instancia do filter
 cortexFilter = ApplicationTenantFilter(
     'App_Using_Pycortexintelligence',
-    'some_tenant'
+    'CLIENT'
 )
 
 ## Configurando o logging do sistema
@@ -93,10 +93,11 @@ LOGGING = {
         "level": "DEBUG",
     }
 }
+## Configuring Logging
 logging.config.dictConfig(LOGGING)
 
 # Execution Parameters
-# You can define Origin, to inform plataform a bundle of parses.
+# You can define Origin, to inform platform a bundle of parses.
 execution_parameters = {
     'name': 'LoadManager PyCortex',
     # 'origin': 'Connector',
@@ -115,7 +116,7 @@ timeout = {
 }
 
 # DataFormat are Optionally defined
-dafault_data_format = {
+default_data_format = {
     "charset": "UTF-8",
     "quote": "\"",
     "escape": "\\",
@@ -124,17 +125,22 @@ dafault_data_format = {
     "compressed": "NONE"
 }
 
-# Upload to Cortex
-cortexfunctions.upload_to_cortex(
-    cubo_id='',
-    file_path='',
-    plataform_url='CLIENT.cortex-intelligence.com',
-    username='',
-    password='',
-    data_format=dafault_data_format,
-    timeout=timeout,
-    execution_parameters=execution_parameters,
-)
+try:
+    # Upload to Cortex
+    cortexfunctions.upload_to_cortex(
+        cubo_id='',
+        file_path='',
+        plataform_url='CLIENT.cortex-intelligence.com',
+        username='',
+        password='',
+        data_format=default_data_format,
+        timeout=timeout,
+        execution_parameters=execution_parameters,
+    )
+except Exception as e:
+    # In case of error, send it to logger
+    logging.error(str(e))
+
 ```
 
 ### If you need download file from Cortex Application

@@ -2,8 +2,6 @@ import datetime
 
 import requests
 
-import logging as logger
-
 from time import perf_counter
 
 from pycortexintelligence.core.messages import *
@@ -48,13 +46,12 @@ class LoadExecution:
             history = self.execution_history()
             complete = history['completed']
 
-        if('success' in history and history['success'] == True):
-            logger.info("LoadExecution '{}' finished with success!".format(self.id))
-        else:
-            logger.error("Error on Load execution id: " + history['executionId'])
+        if('success' not in history or history['success'] == False):
+            msg = "Error on Load execution id: {}".format(history['executionId'])
             errors = history['errors']
             for error in errors:
-                logger.error("FileID: " + error['fileId'] + ", error code: " + error['description'] + ", description: " + error['value'])
+                msg += "\nError on file id: {}, code: {}, value: {}".format(error['fileId'], error['description'], error['value'])
+            raise Exception(msg)
     
     def send_file(self, file_path, data_format):
         endpoint = self.loadmanager + "/execution/" + self.id + "/file"
