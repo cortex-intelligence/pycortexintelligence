@@ -1,17 +1,12 @@
 import datetime
 
 from io import BytesIO, BufferedWriter
-from urllib import request
 
 import requests
 
 from time import perf_counter
 
 from pycortexintelligence.core.messages import *
-
-def check_response(response):
-    if response.ok == False:
-        raise Exception("Request failed! " + response.reason)
 
 def _make_url_auth(plataform_url):
     return "https://{}/service/integration-authorization-service.login".format(plataform_url)
@@ -30,12 +25,12 @@ class LoadExecution:
     def start_process(self):
         endpoint = self.loadmanager + "/execution/" + self.id + "/start"
         response = requests.put(endpoint, headers=self.headers)
-        check_response(response)
+        response.raise_for_status()
 
     def execution_history(self):
         endpoint = self.loadmanager + "/execution/" + self.id
         response = requests.get(endpoint, headers=self.headers)
-        check_response(response)
+        response.raise_for_status()
         return response.json()
     
     def wait_until_finished(self):
@@ -64,7 +59,7 @@ class LoadExecution:
             data=data_format,
             files={"file": file_like_object},
         )
-        check_response(response)
+        response.raise_for_status()
 
 class LoadManager:
     def __init__(self, plataform_url, username, password, useSsl = True):
@@ -79,14 +74,14 @@ class LoadManager:
         url = "{}://{}/service/integration-authorization-service.login".format(self.protocol, self.plataform_url)
         credentials = {"login": str(self.username), "password": str(self.password)}
         response = requests.post(url, json=credentials)
-        check_response(response)
+        response.raise_for_status()
         response_json = response.json()
         return {"Authorization": "Bearer " + response_json["key"]}
     
     def get_url(self):
         url =  "{}://{}/service/platform-collector-information/".format(self.protocol, self.plataform_url)
         response = requests.get(url)
-        check_response(response)
+        response.raise_for_status()
         response_json = response.json()
         if "loadManager.url" in response_json:
             return response_json["loadManager.url"]
@@ -101,7 +96,7 @@ class LoadManager:
             , **execution_parameters
         }
         response = requests.post(endpoint, headers=self.credentials, json=content)
-        check_response(response)
+        response.raise_for_status()
         execution_id = response.json()["executionId"]
         return LoadExecution(self.loadmanager, self.credentials, execution_id, file_processing_timeout)
 
@@ -201,7 +196,7 @@ def upload_to_cortex(**kwargs):
     # Verify Kwargs
     if cubo_id and file_like_object and plataform_url and username and password:
         load_execution = upload_local_to_cube(
-            destination_id=cubo_id,
+            cubo_id=cubo_id,
             file_like_object=file_like_object,
             plataform_url=plataform_url,
             username=username,
