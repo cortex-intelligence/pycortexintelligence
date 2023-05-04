@@ -103,7 +103,7 @@ class LoadManager:
         return LoadExecution(self.loadmanager, self.credentials, execution_id, file_processing_timeout)
 
 
-def upload_local_2_cube(destination_id,
+def upload_local_to_cube(destination_id,
                         file_path,
                         plataform_url,
                         username,
@@ -190,7 +190,7 @@ def upload_to_cortex(**kwargs):
 
     # Verify Kwargs
     if cubo_id and file_path and plataform_url and username and password:
-        load_execution = upload_local_2_cube(
+        load_execution = upload_local_to_cube(
             destination_id=cubo_id,
             file_path=file_path,
             plataform_url=plataform_url,
