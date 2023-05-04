@@ -1,5 +1,8 @@
 import datetime
 
+from io import BytesIO, BufferedWriter
+from urllib import request
+
 import requests
 
 from pycortexintelligence.core.messages import *
@@ -77,8 +80,8 @@ def _execution_history(execution_id, loadmanager, headers):
     return response
 
 
-def upload_local_2_cube(cubo_id,
-                        file_path,
+def upload_file_to_cube(cubo_id,
+                        file_like_object,
                         auth_endpoint,
                         credentials,
                         loadmanager=LOADMANAGER,
@@ -103,7 +106,7 @@ def upload_local_2_cube(cubo_id,
     """
     :param timeout:
     :param cubo_id:
-    :param file_path:
+    :param file_like_object:
     :param auth_endpoint:
     :param credentials:
     :param loadmanager:
@@ -134,7 +137,7 @@ def upload_local_2_cube(cubo_id,
         endpoint,
         headers=headers,
         data=data_format,
-        files={"file": open(file_path, "rb")},
+        files={"file": file_like_object},
     )
 
     # ================ Start Data Input Process ===========================
@@ -170,6 +173,13 @@ def upload_to_cortex(**kwargs):
     plataform_url = kwargs.get('plataform_url')
     username = kwargs.get('username')
     password = kwargs.get('password')
+    file_like_object = kwargs.get('file_like_object')
+    
+    if not file_path and not file_like_object:
+        raise ValueError(INVALID_FILES_ERROR, f'FORAM PASSADOS: {file_path}, {file_like_object}')
+    if not file_like_object:
+        file_like_object = open(file_path, "rb")
+
     data_format = kwargs.get('data_format', {
         "charset": "UTF-8",
         "quote": "\"",
@@ -193,12 +203,12 @@ def upload_to_cortex(**kwargs):
         raise ValueError(FORMAT_TIMEOUT)
 
     # Verify Kwargs
-    if cubo_id and file_path and plataform_url and username and password:
+    if cubo_id and file_like_object and plataform_url and username and password:
         auth_endpoint = _make_url_auth(plataform_url)
         credentials = {"login": str(username), "password": str(password)}
-        execution_id, headers = upload_local_2_cube(
+        execution_id, headers = upload_file_to_cube(
             cubo_id=cubo_id,
-            file_path=file_path,
+            file_like_object=file_like_object,
             auth_endpoint=auth_endpoint,
             credentials=credentials,
             data_format=data_format,
@@ -233,6 +243,7 @@ def download_from_cortex(**kwargs):
     password = kwargs.get('password')
     columns = kwargs.get('columns')
     file_path = kwargs.get('file_path')
+    file_like_object = kwargs.get('file_like_object')
     data_format = kwargs.get('data_format', {
         "charset": "UTF-8",
         "quote": "\"",
@@ -240,9 +251,15 @@ def download_from_cortex(**kwargs):
         "delimiter": ",",
     })
     filters = kwargs.get('filters', None)
+
+    if not file_like_object:
+        if isinstance(file_path, BytesIO):
+            file_like_object = BytesIO()
+        else:
+            file_like_object = open(file_path, 'wb')
     if cubo_id and cubo_name:
         raise ValueError(DOWNLOAD_ERROR_JUST_ID_OR_NAME)
-    if (cubo_id or cubo_name) and plataform_url and username and password and columns and file_path:
+    if (cubo_id or cubo_name) and plataform_url and username and password and columns and (file_path or file_like_object):
         # Verify is a ID or Name
         if cubo_id:
             cube = '{"id":"' + cubo_id + '"}'
@@ -308,10 +325,17 @@ def download_from_cortex(**kwargs):
             payload['headers'] = columns_download
 
         with requests.get(download_endpoint, stream=True, headers=headers, params=payload) as r:
+            content_rows = r.headers["Content-Rows"]
             r.raise_for_status()
-            with open(file_path, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
+            for chunk in r.iter_content(chunk_size=8192):
+                file_like_object.write(chunk)
+            file_like_object.flush()
+        
+        if isinstance(file_like_object, BufferedWriter):
+            return content_rows
+
+        if isinstance(file_like_object, BytesIO):
+            return file_like_object, content_rows
     else:
         raise ValueError(ERROR_ARGUMENTS_VALIDATION)
 
