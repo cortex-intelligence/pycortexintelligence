@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [0.0.22] - 2023-05-04
+
+### Added
+- Adaptando nova API do Loadmanager que permite criar uma LoadExecution diretamente, sem precisar criar um DataInput.
+- Fazendo verificação de cada chamada http com response.raise_status_code()
+- Chamada para o upload_local_to_cube aguarda a load execution ser processada pela plataforma
+  e informa se hove algum erro levantando uma Exception
+
 ## [0.0.21] - 2021-07-14
 
 ### Added
