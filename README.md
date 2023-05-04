@@ -178,6 +178,14 @@ cortexfunctions.download_from_cortex(
     filters=filters,
 )
 ```
+## Validating downloaded data from platform.
+
+Now download_from_cortex function returns a variable with Content-Rows from the response header
+```
+content_rows = cortexfunctions.download_from_cortex(
+    ...
+)
+```
 
 ## CLI Usage
 ```bash

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [0.0.21] - 2021-07-14
+
+### Added
+- New method for validating downloaded data from platform based on Content-Rows included in response headers.
+
+## [0.0.20] - 2021-01-11
+
+### Added
+- Support to download from platform to handle data in memory using BytesIO.
+
 ## [Unreleased]
 
 ### Added
@@ -16,7 +26,7 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 - Improve error handling of functions
 - Adjust standardization of function nomenclature
 
-## [0.0.16] - 2021-04-16
+## [0.0.17] - 2021-04-16
 
 ### Added
 - Support for paramaters on datainput in upload function. View the docs.

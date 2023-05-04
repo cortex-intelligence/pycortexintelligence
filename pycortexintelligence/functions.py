@@ -1,5 +1,8 @@
 import datetime
 
+from io import BytesIO, BufferedWriter
+from urllib import request
+
 import requests
 
 from time import perf_counter
@@ -235,6 +238,7 @@ def download_from_cortex(**kwargs):
     password = kwargs.get('password')
     columns = kwargs.get('columns')
     file_path = kwargs.get('file_path')
+    file_like_object = kwargs.get('file_like_object')
     data_format = kwargs.get('data_format', {
         "charset": "UTF-8",
         "quote": "\"",
@@ -242,9 +246,15 @@ def download_from_cortex(**kwargs):
         "delimiter": ",",
     })
     filters = kwargs.get('filters', None)
+
+    if not file_like_object:
+        if isinstance(file_path, BytesIO):
+            file_like_object = BytesIO()
+        else:
+            file_like_object = open(file_path, 'wb')
     if cubo_id and cubo_name:
         raise ValueError(DOWNLOAD_ERROR_JUST_ID_OR_NAME)
-    if (cubo_id or cubo_name) and plataform_url and username and password and columns and file_path:
+    if (cubo_id or cubo_name) and plataform_url and username and password and columns and (file_path or file_like_object):
         # Verify is a ID or Name
         if cubo_id:
             cube = '{"id":"' + cubo_id + '"}'
@@ -310,10 +320,17 @@ def download_from_cortex(**kwargs):
             payload['headers'] = columns_download
 
         with requests.get(download_endpoint, stream=True, headers=headers, params=payload) as r:
+            content_rows = r.headers["Content-Rows"]
             r.raise_for_status()
-            with open(file_path, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
+            for chunk in r.iter_content(chunk_size=8192):
+                file_like_object.write(chunk)
+            file_like_object.flush()
+        
+        if isinstance(file_like_object, BufferedWriter):
+            return content_rows
+
+        if isinstance(file_like_object, BytesIO):
+            return file_like_object, content_rows
     else:
         raise ValueError(ERROR_ARGUMENTS_VALIDATION)
 
