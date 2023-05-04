@@ -53,13 +53,13 @@ class LoadExecution:
                 msg += "\nError on file id: {}, code: {}, value: {}".format(error['fileId'], error['description'], error['value'])
             raise Exception(msg)
     
-    def send_file(self, file_path, data_format):
+    def send_file(self, file_like_object, data_format):
         endpoint = self.loadmanager + "/execution/" + self.id + "/file"
         response = requests.post(
             endpoint,
             headers=self.headers,
             data=data_format,
-            files={"file": open(file_path, "rb")},
+            files={"file": file_like_object},
         )
         check_response(response)
 
@@ -104,7 +104,7 @@ class LoadManager:
 
 
 def upload_local_to_cube(cubo_id,
-                        file_path,
+                        file_like_object,
                         plataform_url,
                         username,
                         password,
@@ -118,7 +118,7 @@ def upload_local_to_cube(cubo_id,
     """
     :param timeout:
     :param cubo_id:
-    :param file_path:
+    :param file_like_object:
     :param auth_endpoint:
     :param credentials:
     :param loadmanager:
@@ -133,7 +133,7 @@ def upload_local_to_cube(cubo_id,
     load_execution = load_manager.create_load_execution(cubo_id, file_processing_timeout, ignore_validation_errors, execution_parameters)
 
     # ================ Send files =============================
-    load_execution.send_file(file_path, data_format)
+    load_execution.send_file(file_like_object, data_format)
 
     # ================ Start Data Input Process ===========================
     load_execution.start_process()
@@ -144,7 +144,7 @@ def upload_local_to_cube(cubo_id,
 def upload_to_cortex(**kwargs):
     """
     :param cubo_id:
-    :param file_path:
+    :param file_like_object:
     :param plataform_url:
     :param username:
     :param password:
@@ -167,6 +167,13 @@ def upload_to_cortex(**kwargs):
     plataform_url = kwargs.get('plataform_url')
     username = kwargs.get('username')
     password = kwargs.get('password')
+    file_like_object = kwargs.get('file_like_object')
+
+    if not file_path and not file_like_object:
+        raise ValueError(INVALID_FILES_ERROR, f'FORAM PASSADOS: {file_path}, {file_like_object}')
+    if not file_like_object:
+        file_like_object = open(file_path, "rb")
+
     data_format = kwargs.get('data_format', {
         "charset": "UTF-8",
         "quote": "\"",
@@ -189,10 +196,10 @@ def upload_to_cortex(**kwargs):
         raise ValueError(FORMAT_TIMEOUT)
 
     # Verify Kwargs
-    if cubo_id and file_path and plataform_url and username and password:
+    if cubo_id and file_like_object and plataform_url and username and password:
         load_execution = upload_local_to_cube(
             destination_id=cubo_id,
-            file_path=file_path,
+            file_like_object=file_like_object,
             plataform_url=plataform_url,
             username=username,
             password= password,
