@@ -103,7 +103,7 @@ class LoadManager:
         return LoadExecution(self.loadmanager, self.credentials, execution_id, file_processing_timeout)
 
 
-def upload_local_to_cube(destination_id,
+def upload_local_to_cube(cubo_id,
                         file_path,
                         plataform_url,
                         username,
@@ -117,7 +117,7 @@ def upload_local_to_cube(destination_id,
                         ):
     """
     :param timeout:
-    :param destination_id:
+    :param cubo_id:
     :param file_path:
     :param auth_endpoint:
     :param credentials:
@@ -130,7 +130,7 @@ def upload_local_to_cube(destination_id,
     load_manager = LoadManager(plataform_url, username, password, False)
 
     # ================ Get New Execution =======================
-    load_execution = load_manager.create_load_execution(destination_id, file_processing_timeout, ignore_validation_errors, execution_parameters)
+    load_execution = load_manager.create_load_execution(cubo_id, file_processing_timeout, ignore_validation_errors, execution_parameters)
 
     # ================ Send files =============================
     load_execution.send_file(file_path, data_format)
