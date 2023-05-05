@@ -4,7 +4,7 @@ from io import BytesIO, BufferedWriter
 
 import requests
 
-from time import perf_counter
+from time import perf_counter, sleep
 
 from pycortexintelligence.core.messages import *
 
@@ -37,7 +37,8 @@ class LoadExecution:
         start_time = perf_counter()
         history = self.execution_history()
         complete = history['completed']
-        while(complete == False):
+        while complete == False:
+            sleep(5)
             current_time = perf_counter()
             if((current_time - start_time) > self.timeout):
                 break
@@ -101,7 +102,7 @@ class LoadManager:
         return LoadExecution(self.loadmanager, self.credentials, execution_id, file_processing_timeout)
 
 
-def upload_local_to_cube(cubo_id,
+def upload_file_to_cube(cubo_id,
                         file_like_object,
                         plataform_url,
                         username,
@@ -195,7 +196,7 @@ def upload_to_cortex(**kwargs):
 
     # Verify Kwargs
     if cubo_id and file_like_object and plataform_url and username and password:
-        load_execution = upload_local_to_cube(
+        load_execution = upload_file_to_cube(
             cubo_id=cubo_id,
             file_like_object=file_like_object,
             plataform_url=plataform_url,
