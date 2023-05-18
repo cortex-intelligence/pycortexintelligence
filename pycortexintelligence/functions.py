@@ -1,14 +1,14 @@
 import datetime
 
 from io import BytesIO, BufferedWriter
-from urllib import request
 
 import requests
 
+import logging
+
+from time import perf_counter, sleep
+
 from pycortexintelligence.core.messages import *
-
-LOADMANAGER = "https://api.cortex-intelligence.com"
-
 
 def _make_url_auth(plataform_url):
     return "https://{}/service/integration-authorization-service.login".format(plataform_url)
@@ -17,91 +17,124 @@ def _make_url_auth(plataform_url):
 def _make_download_url(plataform_url):
     return 'https://{}/service/integration-cube-service.download?'.format(plataform_url)
 
+## Filter de logging para adicionar os campos 
+## adicionais: Application e tenant
+class ApplicationTenantFilter(logging.Filter):
+    def __init__(self, application_name, tenant):
+        # In an actual use case would dynamically get this
+        # (e.g. from memcache)
+        self.application_name = application_name
+        self.tenant = tenant
 
-def _get_sid_bearer_token(auth_endpoint, credentials):
-    """
-    :param auth_endpoint:
-    :param credentials:
-    :return:
-    """
-    response = requests.post(auth_endpoint, json=credentials)
-    response_json = response.json()
-    return {"Authorization": "Bearer " + response_json["key"]}
+    def filter(self, record):
+        record.Application = self.application_name
+        record.tenant = self.tenant
+        return True
 
+class LoadExecution:
+    def __init__(self, loadmanager_url, auth_headers, execution_id, timeout):
+        self.loadmanager = loadmanager_url
+        self.headers = auth_headers
+        self.id = execution_id
+        self.timeout = timeout
+    
+    def start_process(self):
+        endpoint = self.loadmanager + "/execution/" + self.id + "/start"
+        response = requests.put(endpoint, headers=self.headers)
+        response.raise_for_status()
 
-def _get_data_input(content, loadmanager, headers):
-    """
-    :param content:
-    :param loadmanager:
-    :param headers:
-    :return:
-    """
-    endpoint = loadmanager + "/datainput"
-    response = requests.post(endpoint, headers=headers, json=content)
-    data_input_id = response.json()["id"]
-    return data_input_id
+    def execution_history(self):
+        endpoint = self.loadmanager + "/execution/" + self.id
+        response = requests.get(endpoint, headers=self.headers)
+        response.raise_for_status()
+        return response.json()
+    
+    def check_finished(self):
+        history = self.execution_history()
+        complete = history['completed']
+        if complete == False:
+            return False
+        
+        if 'success' not in history or history['success'] == False:
+            msg = "Error on Load execution id: {}".format(history['executionId'])
+            errors = history['errors']
+            for error in errors:
+                msg += "\nError on file id: {}, code: {}, value: {}".format(error['fileId'], error['description'], error['value'])
+            raise Exception(msg)
+        
+        return True
+    
+    def wait_until_finished(self):
+        start_time = perf_counter()
+        complete = self.check_finished()
+        while complete == False:
+            sleep(5)
+            current_time = perf_counter()
+            if((current_time - start_time) > self.timeout):
+                break
+            complete = self.check_finished()
+    
+    def send_file(self, file_like_object, data_format):
+        endpoint = self.loadmanager + "/execution/" + self.id + "/file"
+        response = requests.post(
+            endpoint,
+            headers=self.headers,
+            data=data_format,
+            files={"file": file_like_object},
+        )
+        response.raise_for_status()
 
-
-def _get_execution_id(data_input_id, content, loadmanager, headers):
-    """
-    :param data_input_id:
-    :param content:
-    :param loadmanager:
-    :param headers:
-    :return:
-    """
-    endpoint = "{}/datainput/{}/execution".format(loadmanager, data_input_id)
-    response = requests.post(endpoint, headers=headers, json=content)
-    execution_id = response.json()["executionId"]
-    return execution_id
-
-
-def _start_process(execution_id, loadmanager, headers):
-    """
-    :param execution_id:
-    :param loadmanager:
-    :param headers:
-    :return:
-    """
-    endpoint = loadmanager + "/execution/" + execution_id + "/start"
-    response = requests.put(endpoint, headers=headers)
-    return response
-
-
-def _execution_history(execution_id, loadmanager, headers):
-    """
-    :param execution_id:
-    :param loadmanager:
-    :param headers:
-    :return:
-    """
-    endpoint = loadmanager + "/execution/" + execution_id  # + '/history'
-    response = requests.get(endpoint, headers=headers)
-    return response
+class LoadManager:
+    def __init__(self, plataform_url, username, password, useSsl = True):
+        self.protocol = "https" if useSsl else "http"
+        self.plataform_url = plataform_url
+        self.username = username
+        self.password = password
+        self.loadmanager = self.get_url()
+        self.credentials = self.get_platform_token()
+    
+    def get_platform_token(self):
+        url = "{}://{}/service/integration-authorization-service.login".format(self.protocol, self.plataform_url)
+        credentials = {"login": str(self.username), "password": str(self.password)}
+        response = requests.post(url, json=credentials)
+        response.raise_for_status()
+        response_json = response.json()
+        return {"Authorization": "Bearer " + response_json["key"]}
+    
+    def get_url(self):
+        url =  "{}://{}/service/platform-collector-information/".format(self.protocol, self.plataform_url)
+        response = requests.get(url)
+        response.raise_for_status()
+        response_json = response.json()
+        if "loadManager.url" in response_json:
+            return response_json["loadManager.url"]
+        raise Exception("LoadManager not supported!")
+    
+    def create_load_execution(self, destination_id, file_processing_timeout, ignore_validation_errors, execution_parameters):
+        endpoint = "{}/execution".format(self.loadmanager)
+        content = {
+            "destinationId": destination_id,
+            "fileProcessingTimeout": file_processing_timeout,
+            "ignoreValidationErrors": ignore_validation_errors
+            , **execution_parameters
+        }
+        response = requests.post(endpoint, headers=self.credentials, json=content)
+        response.raise_for_status()
+        execution_id = response.json()["executionId"]
+        return LoadExecution(self.loadmanager, self.credentials, execution_id, file_processing_timeout)
 
 
 def upload_file_to_cube(cubo_id,
                         file_like_object,
-                        auth_endpoint,
-                        credentials,
-                        loadmanager=LOADMANAGER,
-                        data_format={
-                            "charset": "UTF-8",
-                            "quote": "\"",
-                            "escape": "\\",
-                            "delimiter": ",",
-                            "fileType": "CSV"
-                        },
-                        timeout={
-                            'file': 300,
-                            'execution': 600,
-                        },
+                        plataform_url,
+                        username,
+                        password,
+                        data_format,
+                        file_processing_timeout,
                         execution_parameters={
                             'name': 'LoadManager PyCortex',
                         },
-                        datainput_parameters={
-                            'ignoreValidationErrors': False
-                        }
+                        ignore_validation_errors=False
                         ):
     """
     :param timeout:
@@ -114,42 +147,25 @@ def upload_file_to_cube(cubo_id,
     :return:
     """
 
-    # ================ Get Bearer Token ===================
-    headers = _get_sid_bearer_token(auth_endpoint, credentials)
+    # =============== New LoadManager instance =================
+    load_manager = LoadManager(plataform_url, username, password, False)
 
-    # ================ Content ============================
-    content = {
-        "destinationId": cubo_id,
-        'ignoreValidationErrors': datainput_parameters['ignoreValidationErrors'],
-        "fileProcessingTimeout": int(timeout['file']),
-        "executionTimeout": int(timeout['execution']),
-    }
-
-    # ================ Get Data Input Id ======================
-    data_input_id = _get_data_input(content, loadmanager, headers)
-
-    # ================ Get Execution Id =======================
-    execution_id = _get_execution_id(data_input_id, execution_parameters, loadmanager, headers)
+    # ================ Get New Execution =======================
+    load_execution = load_manager.create_load_execution(cubo_id, file_processing_timeout, ignore_validation_errors, execution_parameters)
 
     # ================ Send files =============================
-    endpoint = loadmanager + "/execution/" + execution_id + "/file"
-    response = requests.post(
-        endpoint,
-        headers=headers,
-        data=data_format,
-        files={"file": file_like_object},
-    )
+    load_execution.send_file(file_like_object, data_format)
 
     # ================ Start Data Input Process ===========================
-    _start_process(execution_id, loadmanager, headers)
+    load_execution.start_process()
 
-    return execution_id, headers
+    return load_execution
 
 
 def upload_to_cortex(**kwargs):
     """
     :param cubo_id:
-    :param file_path:
+    :param file_like_object:
     :param plataform_url:
     :param username:
     :param password:
@@ -158,13 +174,12 @@ def upload_to_cortex(**kwargs):
                             "quote": "\"",
                             "escape": "\\",
                             "delimiter": ",",
-                            "fileType": "CSV"
+                            "fileType": "CSV",
+                            "compressed": "NONE"
                         }
     :param timeout: {
-        'file': 300,
-        'execution': 600,
+        'file': 300
     }
-    :param loadmanager: LOADMANAGER
     :return:
     """
     # Read Kwargs
@@ -174,7 +189,7 @@ def upload_to_cortex(**kwargs):
     username = kwargs.get('username')
     password = kwargs.get('password')
     file_like_object = kwargs.get('file_like_object')
-    
+
     if not file_path and not file_like_object:
         raise ValueError(INVALID_FILES_ERROR, f'FORAM PASSADOS: {file_path}, {file_like_object}')
     if not file_like_object:
@@ -185,13 +200,12 @@ def upload_to_cortex(**kwargs):
         "quote": "\"",
         "escape": "\\",
         "delimiter": ",",
-        "fileType": "CSV"
+        "fileType": "CSV",
+        "compressed": "NONE"
     })
     timeout = kwargs.get('timeout', {
-        'file': 300,
-        'execution': 600,
+        'file': 300
     })
-    loadmanager = kwargs.get('loadmanager', LOADMANAGER)
     execution_parameters = kwargs.get('execution_parameters', {
         'name': 'LoadManager PyCortex',
     })
@@ -204,21 +218,21 @@ def upload_to_cortex(**kwargs):
 
     # Verify Kwargs
     if cubo_id and file_like_object and plataform_url and username and password:
-        auth_endpoint = _make_url_auth(plataform_url)
-        credentials = {"login": str(username), "password": str(password)}
-        execution_id, headers = upload_file_to_cube(
+        load_execution = upload_file_to_cube(
             cubo_id=cubo_id,
             file_like_object=file_like_object,
-            auth_endpoint=auth_endpoint,
-            credentials=credentials,
+            plataform_url=plataform_url,
+            username=username,
+            password= password,
             data_format=data_format,
-            timeout=timeout,
-            loadmanager=loadmanager,
+            file_processing_timeout=int(timeout['file']),
             execution_parameters=execution_parameters,
-            datainput_parameters=datainput_parameters,
+            ignore_validation_errors=datainput_parameters['ignoreValidationErrors'],
         )
-        response = _execution_history(execution_id, LOADMANAGER, headers)
-        return response
+        
+        load_execution.check_finished()
+        
+        return load_execution
     else:
         raise ValueError(ERROR_ARGUMENTS_VALIDATION)
 

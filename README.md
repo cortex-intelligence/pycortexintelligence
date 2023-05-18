@@ -39,10 +39,49 @@ execution_parameters = {
 
 ### If you need upload a file to Cortex Application
 ```python
+import logging.config
 from pycortexintelligence import functions as cortexfunctions
 
+## Criamos uma instancia do filter
+cortexFilter = cortexfunctions.ApplicationTenantFilter(
+    'App_Using_Pycortexintelligence',
+    'CLIENT'
+)
+
+## Configurando o logging do sistema
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': True,
+    'formatters': {
+        'verbose': {
+            'format': '%(levelname)s %(asctime)s %(module)s %(process)d %(thread)d %(message)s'
+        },
+    },
+    "handlers": {
+        'console':{
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose'
+        },
+        ## Entrada do handler do Graylog utilizando graypy
+        ## Para utilizar esse handler eh necessario instalar o graypy 
+        ## no requirements.txt de sua aplicacao ou com pip install graypy
+        'graypy': {
+            'class': 'graypy.GELFUDPHandler',
+            'host': 'localhost',
+            'port': 12201,
+            'filters': [cortexFilter]
+        }
+    },
+    "root": {
+        "handlers": ["console", "graypy"],
+        "level": "DEBUG",
+    }
+}
+## Configuring Logging
+logging.config.dictConfig(LOGGING)
+
 # Execution Parameters
-# You can define Origin, to inform plataform a bundle of parses.
+# You can define Origin, to inform platform a bundle of parses.
 execution_parameters = {
     'name': 'LoadManager PyCortex',
     # 'origin': 'Connector',
@@ -53,38 +92,39 @@ data_input_parameters = {
     'ignoreValidationErrors': True,
 }
 
-# Loadmanager
-loadmanager = 'https://api.cortex-intelligence.com'
-
 # Timeouts
 # You can set timeouts for the platform according to the size of the uploaded files
 # or use the default
 timeout = {
-    'file': 300,
-    'execution': 600,
+    'file': 300
 }
 
 # DataFormat are Optionally defined
-dafault_data_format = {
+default_data_format = {
     "charset": "UTF-8",
     "quote": "\"",
     "escape": "\\",
     "delimiter": ",",
-    "fileType": "CSV"
+    "fileType": "CSV",
+    "compressed": "NONE"
 }
 
-# Upload to Cortex
-cortexfunctions.upload_to_cortex(
-    cubo_id='',
-    file_path='',
-    plataform_url='CLIENT.cortex-intelligence.com',
-    username='',
-    password='',
-    data_format=dafault_data_format,
-    timeout=timeout,
-    loadmanager=loadmanager,
-    execution_parameters=execution_parameters,
-)
+try:
+    # Upload to Cortex
+    cortexfunctions.upload_to_cortex(
+        cubo_id='',
+        file_path='',
+        plataform_url='CLIENT.cortex-intelligence.com',
+        username='',
+        password='',
+        data_format=default_data_format,
+        timeout=timeout,
+        execution_parameters=execution_parameters,
+    )
+except Exception as e:
+    # In case of error, send it to logger
+    logging.error(str(e))
+
 ```
 
 ### If you need download file from Cortex Application
