@@ -4,6 +4,8 @@ from io import BytesIO, BufferedWriter
 
 import requests
 
+import logging
+
 from time import perf_counter, sleep
 
 from pycortexintelligence.core.messages import *
@@ -14,6 +16,20 @@ def _make_url_auth(plataform_url):
 
 def _make_download_url(plataform_url):
     return 'https://{}/service/integration-cube-service.download?'.format(plataform_url)
+
+## Filter de logging para adicionar os campos 
+## adicionais: Application e tenant
+class ApplicationTenantFilter(logging.Filter):
+    def __init__(self, application_name, tenant):
+        # In an actual use case would dynamically get this
+        # (e.g. from memcache)
+        self.application_name = application_name
+        self.tenant = tenant
+
+    def filter(self, record):
+        record.Application = self.application_name
+        record.tenant = self.tenant
+        return True
 
 class LoadExecution:
     def __init__(self, loadmanager_url, auth_headers, execution_id, timeout):
@@ -215,7 +231,8 @@ def upload_to_cortex(**kwargs):
         )
         
         load_execution.check_finished()
-
+        
+        return load_execution
     else:
         raise ValueError(ERROR_ARGUMENTS_VALIDATION)
 
