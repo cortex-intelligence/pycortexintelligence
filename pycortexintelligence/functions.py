@@ -33,24 +33,30 @@ class LoadExecution:
         response.raise_for_status()
         return response.json()
     
-    def wait_until_finished(self):
-        start_time = perf_counter()
+    def check_finished(self):
         history = self.execution_history()
         complete = history['completed']
-        while complete == False:
-            sleep(5)
-            current_time = perf_counter()
-            if((current_time - start_time) > self.timeout):
-                break
-            history = self.execution_history()
-            complete = history['completed']
-
-        if('success' not in history or history['success'] == False):
+        if complete == False:
+            return False
+        
+        if 'success' not in history or history['success'] == False:
             msg = "Error on Load execution id: {}".format(history['executionId'])
             errors = history['errors']
             for error in errors:
                 msg += "\nError on file id: {}, code: {}, value: {}".format(error['fileId'], error['description'], error['value'])
             raise Exception(msg)
+        
+        return True
+    
+    def wait_until_finished(self):
+        start_time = perf_counter()
+        complete = self.check_finished()
+        while complete == False:
+            sleep(5)
+            current_time = perf_counter()
+            if((current_time - start_time) > self.timeout):
+                break
+            complete = self.check_finished()
     
     def send_file(self, file_like_object, data_format):
         endpoint = self.loadmanager + "/execution/" + self.id + "/file"
@@ -208,7 +214,7 @@ def upload_to_cortex(**kwargs):
             ignore_validation_errors=datainput_parameters['ignoreValidationErrors'],
         )
         
-        load_execution.wait_until_finished()
+        load_execution.check_finished()
 
     else:
         raise ValueError(ERROR_ARGUMENTS_VALIDATION)
