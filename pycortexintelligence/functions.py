@@ -1,28 +1,20 @@
 import datetime
-
-from io import BytesIO, BufferedWriter
+import json
+import logging
+from http import HTTPStatus
+from io import BufferedWriter, BytesIO
+from typing import Any, BinaryIO, Dict, List, Optional, Union
 
 import requests
 
-import logging
-
-from time import perf_counter, sleep
-
-from pycortexintelligence.core.messages import *
-
-def _make_url_auth(plataform_url):
-    return "https://{}/service/integration-authorization-service.login".format(plataform_url)
+from pycortexintelligence.core.messages import (
+    DOWNLOAD_ERROR_JUST_ID_OR_NAME,
+    ERROR_ARGUMENTS_VALIDATION,
+)
 
 
-def _make_download_url(plataform_url):
-    return 'https://{}/service/integration-cube-service.download?'.format(plataform_url)
-
-## Filter de logging para adicionar os campos 
-## adicionais: Application e tenant
 class ApplicationTenantFilter(logging.Filter):
     def __init__(self, application_name, tenant):
-        # In an actual use case would dynamically get this
-        # (e.g. from memcache)
         self.application_name = application_name
         self.tenant = tenant
 
@@ -31,325 +23,325 @@ class ApplicationTenantFilter(logging.Filter):
         record.tenant = self.tenant
         return True
 
+
 class LoadExecution:
-    def __init__(self, loadmanager_url, auth_headers, execution_id, timeout):
-        self.loadmanager = loadmanager_url
-        self.headers = auth_headers
-        self.id = execution_id
-        self.timeout = timeout
-    
+    loadmanager_url = "https://api.cortex-intelligence.com"
+
+    def __init__(
+        self,
+        cube_id,
+        header,
+        file_processing_timeout,
+        ignore_validation_errors,
+        executor_name,
+        file_like_object,
+        data_format,
+    ):
+        self.cube_id = cube_id
+        self.header = header
+        self.file_processing_timeout = file_processing_timeout
+        self.ignore_validation_errors = ignore_validation_errors
+        self.executor_name = executor_name
+        self.file_like_object = file_like_object
+        self.data_format = data_format
+
     def start_process(self):
-        endpoint = self.loadmanager + "/execution/" + self.id + "/start"
-        response = requests.put(endpoint, headers=self.headers)
+        endpoint = self.loadmanager_url + "/execution/" + self.execution_id + "/start"
+        response = requests.put(endpoint, headers=self.header)
         response.raise_for_status()
 
-    def execution_history(self):
-        endpoint = self.loadmanager + "/execution/" + self.id
-        response = requests.get(endpoint, headers=self.headers)
+    @classmethod
+    def execution_history(cls, headers, execution_id):
+        endpoint = cls.loadmanager_url + "/execution/" + execution_id
+        response = requests.get(endpoint, headers=headers)
         response.raise_for_status()
         return response.json()
-    
-    def check_finished(self):
-        history = self.execution_history()
-        complete = history['completed']
-        if complete == False:
+
+    @classmethod
+    def check_finished(cls, headers, execution_id) -> bool:
+        history = cls.execution_history(headers, execution_id)
+        complete = history["completed"]
+        if not complete:
             return False
-        
-        if 'success' not in history or history['success'] == False:
-            msg = "Error on Load execution id: {}".format(history['executionId'])
-            errors = history['errors']
+
+        if "success" not in history or history["success"] is False:
+            msg = "Error on Load execution id: {}".format(history["executionId"])
+            errors = history["errors"]
             for error in errors:
-                msg += "\nError on file id: {}, code: {}, value: {}".format(error['fileId'], error['description'], error['value'])
+                msg += "\nError on file id: {}, code: {}, value: {}".format(
+                    error["fileId"], error["description"], error["value"]
+                )
             raise Exception(msg)
-        
+
         return True
-    
-    def wait_until_finished(self):
-        start_time = perf_counter()
-        complete = self.check_finished()
-        while complete == False:
-            sleep(5)
-            current_time = perf_counter()
-            if((current_time - start_time) > self.timeout):
-                break
-            complete = self.check_finished()
-    
-    def send_file(self, file_like_object, data_format):
-        endpoint = self.loadmanager + "/execution/" + self.id + "/file"
+
+    def send_file(self):
+        endpoint = self.loadmanager_url + "/execution/" + self.execution_id + "/file"
         response = requests.post(
             endpoint,
-            headers=self.headers,
-            data=data_format,
-            files={"file": file_like_object},
+            headers=self.header,
+            data=self.data_format,
+            files={"file": self.file_like_object},
         )
         response.raise_for_status()
 
-class LoadManager:
-    def __init__(self, plataform_url, username, password, useSsl = True):
-        self.protocol = "https" if useSsl else "http"
-        self.plataform_url = plataform_url
-        self.username = username
-        self.password = password
-        self.loadmanager = self.get_url()
-        self.credentials = self.get_platform_token()
-    
-    def get_platform_token(self):
-        url = "{}://{}/service/integration-authorization-service.login".format(self.protocol, self.plataform_url)
-        credentials = {"login": str(self.username), "password": str(self.password)}
-        response = requests.post(url, json=credentials)
-        response.raise_for_status()
-        response_json = response.json()
-        return {"Authorization": "Bearer " + response_json["key"]}
-    
-    def get_url(self):
-        url =  "{}://{}/service/platform-collector-information/".format(self.protocol, self.plataform_url)
-        response = requests.get(url)
-        response.raise_for_status()
-        response_json = response.json()
-        if "loadManager.url" in response_json:
-            return response_json["loadManager.url"]
-        raise Exception("LoadManager not supported!")
-    
-    def create_load_execution(self, destination_id, file_processing_timeout, ignore_validation_errors, execution_parameters):
-        endpoint = "{}/execution".format(self.loadmanager)
+    def create_load_execution(self) -> str:
+        endpoint = f"{self.loadmanager_url}/execution"
         content = {
-            "destinationId": destination_id,
-            "fileProcessingTimeout": file_processing_timeout,
-            "ignoreValidationErrors": ignore_validation_errors
-            , **execution_parameters
+            "destinationId": self.cube_id,
+            "fileProcessingTimeout": self.file_processing_timeout,
+            "ignoreValidationErrors": self.ignore_validation_errors,
+            "name": self.executor_name,
         }
-        response = requests.post(endpoint, headers=self.credentials, json=content)
+        response = requests.post(endpoint, headers=self.header, json=content)
         response.raise_for_status()
-        execution_id = response.json()["executionId"]
-        return LoadExecution(self.loadmanager, self.credentials, execution_id, file_processing_timeout)
+        self.execution_id = response.json()["executionId"]
+        return self.execution_id
 
 
-def upload_file_to_cube(cubo_id,
-                        file_like_object,
-                        plataform_url,
-                        username,
-                        password,
-                        data_format,
-                        file_processing_timeout,
-                        execution_parameters={
-                            'name': 'LoadManager PyCortex',
-                        },
-                        ignore_validation_errors=False
-                        ):
-    """
-    :param timeout:
-    :param cubo_id:
-    :param file_like_object:
-    :param auth_endpoint:
-    :param credentials:
-    :param loadmanager:
-    :param data_format:
-    :return:
-    """
-
-    # =============== New LoadManager instance =================
-    load_manager = LoadManager(plataform_url, username, password, False)
-
-    # ================ Get New Execution =======================
-    load_execution = load_manager.create_load_execution(cubo_id, file_processing_timeout, ignore_validation_errors, execution_parameters)
-
-    # ================ Send files =============================
-    load_execution.send_file(file_like_object, data_format)
-
-    # ================ Start Data Input Process ===========================
-    load_execution.start_process()
-
-    return load_execution
-
-
-def upload_to_cortex(**kwargs):
-    """
-    :param cubo_id:
-    :param file_like_object:
-    :param plataform_url:
-    :param username:
-    :param password:
-    :param data_format: data_format={
-                            "charset": "UTF-8",
-                            "quote": "\"",
-                            "escape": "\\",
-                            "delimiter": ",",
-                            "fileType": "CSV",
-                            "compressed": "NONE"
-                        }
-    :param timeout: {
-        'file': 300
-    }
-    :return:
-    """
-    # Read Kwargs
-    cubo_id = kwargs.get('cubo_id')
-    file_path = kwargs.get('file_path')
-    plataform_url = kwargs.get('plataform_url')
-    username = kwargs.get('username')
-    password = kwargs.get('password')
-    file_like_object = kwargs.get('file_like_object')
-
-    if not file_path and not file_like_object:
-        raise ValueError(INVALID_FILES_ERROR, f'FORAM PASSADOS: {file_path}, {file_like_object}')
-    if not file_like_object:
-        file_like_object = open(file_path, "rb")
-
-    data_format = kwargs.get('data_format', {
+class PyCortex:
+    data_format = {
         "charset": "UTF-8",
-        "quote": "\"",
+        "quote": '"',
         "escape": "\\",
         "delimiter": ",",
         "fileType": "CSV",
-        "compressed": "NONE"
-    })
-    timeout = kwargs.get('timeout', {
-        'file': 300
-    })
-    execution_parameters = kwargs.get('execution_parameters', {
-        'name': 'LoadManager PyCortex',
-    })
-    datainput_parameters = kwargs.get('datainput_parameters', {
-        'ignoreValidationErrors': False
-    })
+        "compressed": "NONE",
+    }
+    executor_name = "LoadManager PyCortex"
+    file_processing_timeout = 300
+    ignore_validation_errors = False
 
-    if 'file' not in timeout.keys() and 'execution' not in timeout.keys():
-        raise ValueError(FORMAT_TIMEOUT)
+    @classmethod
+    def upload_to_cortex(
+        cls,
+        cube_id: str,
+        platform_url: str,
+        username: str,
+        password: str,
+        file_object: Union[str, BinaryIO],
+        is_file=True,
+        **kwargs,
+    ) -> Dict:
+        if is_file and isinstance(file_object, str):
+            file_object = open(file_object, "rb")
 
-    # Verify Kwargs
-    if cubo_id and file_like_object and plataform_url and username and password:
-        load_execution = upload_file_to_cube(
-            cubo_id=cubo_id,
-            file_like_object=file_like_object,
-            plataform_url=plataform_url,
-            username=username,
-            password= password,
-            data_format=data_format,
-            file_processing_timeout=int(timeout['file']),
-            execution_parameters=execution_parameters,
-            ignore_validation_errors=datainput_parameters['ignoreValidationErrors'],
+        elif not is_file and isinstance(file_object, BytesIO):
+            file_object.seek(0)
+
+        else:
+            raise ValueError(
+                f"A combinação is_file={is_file} com o tipo {type(file_object)} do file_object não é permitida."
+            )
+
+        file_processing_timeout = int(kwargs.get("timeout", cls.file_processing_timeout))
+        ignore_validation_errors = kwargs.get("ignore_errors", cls.ignore_validation_errors)
+        executor_name = kwargs.get("executor_name", cls.executor_name)
+
+        header = cls.platform_auth(platform_url, username, password)
+
+        load_execution = LoadExecution(
+            cube_id=cube_id,
+            header=header,
+            file_processing_timeout=file_processing_timeout,
+            ignore_validation_errors=ignore_validation_errors,
+            executor_name=executor_name,
+            file_like_object=file_object,
+            data_format=cls.data_format,
         )
-        
-        load_execution.check_finished()
-        
-        return load_execution
-    else:
-        raise ValueError(ERROR_ARGUMENTS_VALIDATION)
+        execution_id = load_execution.create_load_execution()
+        load_execution.send_file()
+        load_execution.start_process()
+        return LoadExecution.execution_history(headers=header, execution_id=execution_id)
 
-
-def download_from_cortex(**kwargs):
-    """
-    :param cubo_id:
-    :param cubo_name:
-    :param plataform_url:
-    :param username:
-    :param password:
-    :param columns:
-    :param file_path:
-    :param data_format:
-    :param filters:
-    :return:
-    """
-    cubo_id = kwargs.get('cubo_id')
-    cubo_name = kwargs.get('cubo_name')
-    plataform_url = kwargs.get('plataform_url')
-    username = kwargs.get('username')
-    password = kwargs.get('password')
-    columns = kwargs.get('columns')
-    file_path = kwargs.get('file_path')
-    file_like_object = kwargs.get('file_like_object')
-    data_format = kwargs.get('data_format', {
-        "charset": "UTF-8",
-        "quote": "\"",
-        "escape": "\\",
-        "delimiter": ",",
-    })
-    filters = kwargs.get('filters', None)
-
-    if not file_like_object:
-        if isinstance(file_path, BytesIO):
-            file_like_object = BytesIO()
-        else:
-            file_like_object = open(file_path, 'wb')
-    if cubo_id and cubo_name:
-        raise ValueError(DOWNLOAD_ERROR_JUST_ID_OR_NAME)
-    if (cubo_id or cubo_name) and plataform_url and username and password and columns and (file_path or file_like_object):
-        # Verify is a ID or Name
-        if cubo_id:
-            cube = '{"id":"' + cubo_id + '"}'
-        else:
-            cube = '{"name":"' + cubo_name + '"}'
-
-        # Columns to Download
-        columns_download = []
-        for column in columns:
-            columns_download.append({
-                "name": column,
-            })
-        columns_download = str(columns_download).replace("'", '"')
-
-        # Need to Apply Filters
-        if filters:
-            filters_download = []
-            for filter in filters:
-                column_name = filter[0]
-                value = filter[1]
-                element = {
-                    "name": column_name,
-                    "type": "SIMPLE",
-                }
+    @staticmethod
+    def make_filter(filters: List):
+        filters_download = []
+        for filter in filters:
+            column_name = filter[0]
+            value = filter[1]
+            element = {
+                "name": column_name,
+                "type": "SIMPLE",
+            }
+            try:
+                value = datetime.datetime.strptime(value, "%d/%m/%Y")
+                element["type"] = "DATE"
+                element["rangeStart"] = value.strftime("%Y%m%d")
+                element["rangeEnd"] = value.strftime("%Y%m%d")
+            except ValueError:
+                value_temp = value
                 try:
-                    value = datetime.datetime.strptime(value, "%d/%m/%Y")
+                    value = value.split("-")  # type: ignore
+                    date_start = datetime.datetime.strptime(value[0], "%d/%m/%Y")
+                    date_end = datetime.datetime.strptime(value[1], "%d/%m/%Y")
                     element["type"] = "DATE"
-                    element["rangeStart"] = value.strftime("%Y%m%d")
-                    element["rangeEnd"] = value.strftime("%Y%m%d")
+                    element["rangeStart"] = date_start.strftime("%Y%m%d")
+                    element["rangeEnd"] = date_end.strftime("%Y%m%d")
                 except ValueError:
-                    value_temp = value
-                    try:
-                        value = value.split('-')
-                        date_start = datetime.datetime.strptime(value[0], "%d/%m/%Y")
-                        date_end = datetime.datetime.strptime(value[1], "%d/%m/%Y")
-                        element["type"] = "DATE"
-                        element["rangeStart"] = date_start.strftime("%Y%m%d")
-                        element["rangeEnd"] = date_end.strftime("%Y%m%d")
-                    except ValueError:
-                        value = value_temp.split('|')
-                        element["value"] = value
-                filters_download.append(element)
-            filters_download = str(filters_download).replace("'", '"')
+                    value = value_temp.split("|")  # type: ignore
+                    element["value"] = value
+            filters_download.append(element)
+        return json.dumps(filters_download, ensure_ascii=False)
 
-        auth_endpoint = _make_url_auth(plataform_url)
-        credentials = {"login": str(username), "password": str(password)}
-        auth_post = requests.post(auth_endpoint, json=credentials)
-        headers = {
-            'x-authorization-user-id': auth_post.json()['userId'],
-            'x-authorization-token': auth_post.json()['key']
-        }
-        download_endpoint = _make_download_url(plataform_url)
-        payload = {
-            'cube': cube,
-            'charset': data_format['charset'],
-            'delimiter': data_format['delimiter'],
-            'quote': data_format['quote'],
-            'escape': data_format['escape'],
-        }
-        if filters:
-            payload['filters'] = filters_download
-        if columns_download:
-            payload['headers'] = columns_download
+    @staticmethod
+    def platform_auth(platform_url: str, username: str, password: str, return_user_id=False):
+        if not (username and password and platform_url):
+            raise ValueError(ERROR_ARGUMENTS_VALIDATION)
 
-        with requests.get(download_endpoint, stream=True, headers=headers, params=payload) as r:
-            content_rows = r.headers["Content-Rows"]
-            r.raise_for_status()
-            for chunk in r.iter_content(chunk_size=8192):
-                file_like_object.write(chunk)
-            file_like_object.flush()
-        
-        if isinstance(file_like_object, BufferedWriter):
-            return content_rows
+        credentials = {"login": username, "password": password}
 
-        if isinstance(file_like_object, BytesIO):
-            return file_like_object, content_rows
-    else:
-        raise ValueError(ERROR_ARGUMENTS_VALIDATION)
+        auth_endpoint = f"https://{platform_url}/service/integration-authorization-service.login"
+        auth_post = requests.post(auth_endpoint, json=credentials).json()
+        if return_user_id:
+            return {
+                "x-authorization-user-id": auth_post["userId"],
+                "x-authorization-token": auth_post["key"],
+            }
+        else:
+            return {"Authorization": f"Bearer {auth_post['key']}"}
 
+    @classmethod
+    def download_from_cortex(
+        cls,
+        cube_id: str,
+        platform_url: str,
+        username: str,
+        password: str,
+        columns: List,
+        filters: List,
+        file_object: BytesIO or str,
+        cubo_name: Optional[str] = None,
+    ) -> Any:
+        if not isinstance(file_object, BytesIO):
+            file_object = open(file_object, "wb")  # type: ignore
+
+        if cube_id and cubo_name:
+            raise ValueError(DOWNLOAD_ERROR_JUST_ID_OR_NAME)
+
+        if (cube_id or cubo_name) and file_object and columns:
+            if cube_id:
+                cube = f'{{"id":"{cube_id}"}}'
+            else:
+                cube = f'{{"name":"{cubo_name}"}}'
+
+            payload = {
+                "cube": cube,
+                "charset": cls.data_format["charset"],
+                "delimiter": cls.data_format["delimiter"],
+                "quote": cls.data_format["quote"],
+                "escape": cls.data_format["escape"],
+            }
+
+            if not columns:
+                raise Exception("É NECESSÁRIO INDICAR PELO MENOS UMA COLUNA")
+
+            columns_download = json.dumps([{"name": column} for column in columns], ensure_ascii=False)
+            payload["headers"] = columns_download
+
+            filters_download = list()
+            if filters:
+                filters_download = cls.make_filter(filters)
+                payload["filters"] = filters_download
+
+            headers = cls.platform_auth(platform_url, username, password, return_user_id=True)
+            download_endpoint = cls._make_download_url(platform_url)
+
+            with requests.get(url=download_endpoint, stream=True, headers=headers, params=payload) as r:
+                content_rows = r.headers["Content-Rows"]
+                r.raise_for_status()
+                chunks_len = list()
+                for chunk in r.iter_content(chunk_size=8192):
+                    chunks_len.append(chunk)
+                    file_object.write(chunk)
+
+                file_object.flush()
+
+            if isinstance(file_object, BufferedWriter):
+                return content_rows
+
+            if isinstance(file_object, BytesIO):
+                return file_object, content_rows
+        else:
+            raise ValueError(ERROR_ARGUMENTS_VALIDATION)
+
+    @classmethod
+    def get_platform_data_credit(cls, platform_url: str, username: str, password: str, filters: Dict):
+        url = f"https://{platform_url}/controller/data-credit-control/data-credit-operation/query-exported"
+        auth_header = cls.platform_auth(platform_url, username, password)
+        response = requests.post(url, json=filters, headers=auth_header)
+        return response.json()
+
+    @classmethod
+    def delete_from_cortex(
+        cls,
+        cube_id: str,
+        platform_url: str,
+        username: str,
+        password: str,
+        filters: Optional[List] = None,
+    ):
+        auth_header = cls.platform_auth(platform_url, username, password, return_user_id=True)
+        payload = {"cube": f'{{"id": "{cube_id}"}}', "filters": list()}
+
+        if filters is None:
+            payload["filters"] = [{"name": "# Records", "type": "SIMPLE", "value": 1}]
+
+        if filters is not None:
+            payload["filters"] = cls.make_filter(filters)
+
+        delete_url = f"https://{platform_url}/service/integration-cube-service.delete"
+
+        response = requests.get(delete_url, params=payload, headers=auth_header)
+
+        if response.status_code == HTTPStatus.OK:
+            return response.status_code
+
+        if response.status_code != HTTPStatus.OK:
+            raise ValueError(f"O status code recebido, foi: {response.status_code}\n {response.content}")
+
+    @staticmethod
+    def _make_download_url(platform_url: str):
+        return f"https://{platform_url}/service/integration-cube-service.download?"
+
+
+def download_from_cortex(**kwargs) -> Any:
+    import warnings
+
+    warnings.warn(
+        "\n\nThis module will be deprecated in the next release. Please use `PyCortex.download_from_cortex`.\n\n",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    if "file_like_object" in kwargs:
+        file_object = kwargs.get("file_like_object")
+    elif "file_path" in kwargs:
+        file_object = kwargs.get("file_path")
+
+    return PyCortex.download_from_cortex(
+        cube_id=kwargs.get("cubo_id"),  # type: ignore
+        platform_url=kwargs.get("plataform_url"),  # type: ignore
+        username=kwargs.get("username"),  # type: ignore
+        password=kwargs.get("password"),  # type: ignore
+        columns=kwargs.get("columns"),  # type: ignore
+        filters=kwargs.get("filters"),  # type: ignore
+        file_object=file_object,  # type: ignore
+    )
+
+
+def upload_to_cortex(**kwargs):
+    import warnings
+
+    warnings.warn(
+        "This module is deprecated. Please use `PyCortex.upload_to_cortex`.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
+    return PyCortex.upload_to_cortex(
+        cube_id=kwargs["cubo_id"],
+        platform_url=kwargs["plataform_url"],
+        username=kwargs["username"],
+        password=kwargs["password"],
+        file_object=kwargs["file_path"],
+    )
