@@ -201,6 +201,93 @@ class PyCortex:
         else:
             return {"Authorization": f"Bearer {auth_post['key']}"}
 
+    @staticmethod
+    def _make_cube_provider_url(platform_url: str):
+        return f"https://{platform_url}/service/rpc/cube-provider-service.load"
+
+    @classmethod
+    def return_field_metadata(cls, field, platform_url, cube_id, header) -> dict:
+        provider_url = cls._make_cube_provider_url(platform_url)
+        resp = requests.post(provider_url, headers=header, json={"id": cube_id})
+        resp.raise_for_status()
+        for dim in resp.json()["dimensions"]:
+            if dim["name"] == field:
+                dimension = dim
+                break
+        try:
+            return dimension
+        except UnboundLocalError:
+            raise Exception("A dimensão não existe nesta tabela.")
+
+    @classmethod
+    def download_from_cortex_via_diego(
+        cls,
+        cube_id: str,
+        platform_url: str,
+        username: str,
+        password: str,
+        filters: dict,
+        exact_match: str = "true",
+    ):
+        field = list(filters.keys())[0]
+        header = cls.platform_auth(platform_url, username, password, return_user_id=True)
+        dim = cls.return_field_metadata(field, platform_url, cube_id, header)
+        body = {
+            "filterList": [
+                {
+                    "id": dim["id"],
+                    "name": dim["name"],
+                    "type": dim["type"],
+                    "exactMatch": exact_match,
+                    "value": list(filters.values())[0],
+                }
+            ]
+        }
+        response = requests.post(
+            f"https://{platform_url}/controller/cube/{cube_id}/dump",
+            headers=header,
+            json=body,
+        )
+        properties = response.json()["properties"]
+        data_format = {
+            "encoding": properties["charset"],
+            "quotechar": properties["quote"],
+            "escapechar": properties["escape"],
+            "sep": properties["delimiter"],
+            "fileType": properties["fileType"],
+            "compressed": properties["compression"],
+        }
+        path = response.json()["path"].replace("s3://", "").split("/", 1)
+        return path[0], path[1], data_format
+
+    @staticmethod
+    def make_df_from_bi(bi_bucket, bi_s3key, properties):
+        import boto3
+        import pandas as pd
+
+        s3 = boto3.resource("s3")
+        my_bucket = s3.Bucket(bi_bucket)
+
+        dataframe = pd.DataFrame()
+
+        for objects in my_bucket.objects.filter(Prefix=bi_s3key):
+            print(objects.key)
+            s3_object = s3.Object(bucket_name=bi_bucket, key=objects.key)
+            s3_response = s3_object.get()
+            s3_object_body = s3_response.get("Body")
+            content = s3_object_body.read()
+
+            temp_df = pd.read_csv(
+                BytesIO(content),
+                sep=properties["sep"],
+                quotechar=properties["quotechar"],
+                escapechar=properties["escapechar"].replace("\\\\", "\\"),
+                encoding=properties["encoding"],
+                compression=properties["compressed"].lower(),
+            )
+            dataframe = pd.concat([dataframe, temp_df], axis=0).reset_index(drop=True)
+        return dataframe
+
     @classmethod
     def download_from_cortex(
         cls,
@@ -208,9 +295,9 @@ class PyCortex:
         platform_url: str,
         username: str,
         password: str,
-        columns: List,
-        filters: List,
         file_object: BytesIO or str,
+        filters: Optional[List] = None,
+        columns: Union[List, str] = "*",
         cubo_name: Optional[str] = None,
     ) -> Any:
         if not isinstance(file_object, BytesIO):
@@ -233,11 +320,13 @@ class PyCortex:
                 "escape": cls.data_format["escape"],
             }
 
-            if not columns:
-                raise Exception("É NECESSÁRIO INDICAR PELO MENOS UMA COLUNA")
+            if isinstance(columns, List):
+                columns_download = json.dumps([{"name": column} for column in columns], ensure_ascii=False)
+                payload["headers"] = columns_download
 
-            columns_download = json.dumps([{"name": column} for column in columns], ensure_ascii=False)
-            payload["headers"] = columns_download
+            if isinstance(columns, str):
+                if columns != "*":
+                    payload["headers"] = json.dumps({"name": columns}, ensure_ascii=False)
 
             filters_download = list()
             if filters:
@@ -248,8 +337,13 @@ class PyCortex:
             download_endpoint = cls._make_download_url(platform_url)
 
             with requests.get(url=download_endpoint, stream=True, headers=headers, params=payload) as r:
-                content_rows = r.headers["Content-Rows"]
                 r.raise_for_status()
+                try:
+                    content_rows = r.headers["Content-Rows"]
+                except KeyError:
+                    raise Exception(
+                        f"Não foi possível realizar o download.\nStatus Code:{r.status_code}\nResponse:{r.content}"
+                    )
                 chunks_len = list()
                 for chunk in r.iter_content(chunk_size=8192):
                     chunks_len.append(chunk)
