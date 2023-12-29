@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [1.2.0] - 2023-12-29
+
+### Added
+- Criação das funções para busca e download de arquivos exportados.
+- Remoção de obrigatoriedade do cube_id
+- Adição de opcional cube_name
+
 ## [1.1.0] - 2023-08-24
 
 ### Added

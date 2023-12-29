@@ -291,26 +291,26 @@ class PyCortex:
     @classmethod
     def download_from_cortex(
         cls,
-        cube_id: str,
         platform_url: str,
         username: str,
         password: str,
         file_object: BytesIO or str,
+        cube_id: Optional[str] = None,
+        cube_name: Optional[str] = None,
         filters: Optional[List] = None,
         columns: Union[List, str] = "*",
-        cubo_name: Optional[str] = None,
     ) -> Any:
         if not isinstance(file_object, BytesIO):
             file_object = open(file_object, "wb")  # type: ignore
 
-        if cube_id and cubo_name:
+        if cube_id and cube_name:
             raise ValueError(DOWNLOAD_ERROR_JUST_ID_OR_NAME)
 
-        if (cube_id or cubo_name) and file_object and columns:
+        if (cube_id or cube_name) and file_object and columns:
             if cube_id:
                 cube = f'{{"id":"{cube_id}"}}'
             else:
-                cube = f'{{"name":"{cubo_name}"}}'
+                cube = f'{{"name":"{cube_name}"}}'
 
             payload = {
                 "cube": cube,
@@ -360,11 +360,18 @@ class PyCortex:
             raise ValueError(ERROR_ARGUMENTS_VALIDATION)
 
     @classmethod
-    def get_platform_data_credit(cls, platform_url: str, username: str, password: str, filters: Dict):
+    def get_exported_file_info(cls, platform_url: str, username: str, password: str, filters: Dict):
         url = f"https://{platform_url}/controller/data-credit-control/data-credit-operation/query-exported"
-        auth_header = cls.platform_auth(platform_url, username, password)
+        auth_header = cls.platform_auth(platform_url, username, password, return_user_id=True)
         response = requests.post(url, json=filters, headers=auth_header)
+        response.raise_for_status()
         return response.json()
+
+    @classmethod
+    def download_exported_file(cls, platform_url: str, username: str, password: str, operation_id: str):
+        url = f"https://{platform_url}/controller/data-credit-control/data-credit-operation/{operation_id}/download"
+        auth_header = cls.platform_auth(platform_url, username, password, return_user_id=True)
+        return requests.get(url, headers=auth_header)
 
     @classmethod
     def delete_from_cortex(
