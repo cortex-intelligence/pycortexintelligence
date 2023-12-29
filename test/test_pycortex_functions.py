@@ -132,6 +132,98 @@ def test_download_from_cortex_assert_quant_linhas_chamada_nova():
 
 
 @mark.skipif(**skip_version_022)
+@mark.download_test
+def test_download_from_cortex_passando_cube_id():
+    files, content_rows = PyCortex.download_from_cortex(
+        cube_id=os.getenv("cube_id"),
+        platform_url=os.getenv("platform_url"),
+        username=os.getenv("username"),
+        password=os.getenv("password"),
+        file_object=BytesIO(),
+        columns=[
+            "ID Cortex",
+            "Data de publicação",
+        ],
+        filters=[
+            ["Data", "20/05/2023-21/05/2023"],
+        ],
+    )
+    files.seek(0)
+    length = read_csv_from_bytesio(files)
+    assert int(content_rows) == length
+
+
+@mark.skipif(**skip_version_022)
+@mark.download_test
+def test_download_from_cortex_passando_cube_name():
+    files, content_rows = PyCortex.download_from_cortex(
+        cube_name=os.getenv("cube_name"),
+        platform_url=os.getenv("platform_url"),
+        username=os.getenv("username"),
+        password=os.getenv("password"),
+        file_object=BytesIO(),
+        columns=[
+            "ID Cortex",
+            "Data de publicação",
+        ],
+        filters=[
+            ["Data", "20/05/2023-21/05/2023"],
+        ],
+    )
+    files.seek(0)
+    length = read_csv_from_bytesio(files)
+    assert int(content_rows) == length
+
+
+@mark.skipif(**skip_version_022)
+@mark.download_test
+@mark.xfail
+def test_download_from_cortex_passando_cube_name_cube_id():
+    with raises(ValueError):
+        files, content_rows = PyCortex.download_from_cortex(
+            cube_name=os.getenv("cube_name"),
+            cube_id=os.getenv("cube_id"),
+            platform_url=os.getenv("platform_url"),
+            username=os.getenv("username"),
+            password=os.getenv("password"),
+            file_object=BytesIO(),
+            columns=[
+                "ID Cortex",
+                "Data de publicação",
+            ],
+            filters=[
+                ["Data", "20/05/2023-21/05/2023"],
+            ],
+        )
+        files.seek(0)
+        length = read_csv_from_bytesio(files)
+        assert int(content_rows) == length
+
+
+@mark.skipif(**skip_version_022)
+@mark.download_test
+@mark.xfail
+def test_download_from_cortex_nao_passando_cube_name_cube_id():
+    with raises(ValueError):
+        files, content_rows = PyCortex.download_from_cortex(
+            platform_url=os.getenv("platform_url"),
+            username=os.getenv("username"),
+            password=os.getenv("password"),
+            file_object=BytesIO(),
+            columns=[
+                "ID Cortex",
+                "Data de publicação",
+            ],
+            filters=[
+                ["Data", "20/05/2023-21/05/2023"],
+            ],
+        )
+        files.seek(0)
+        length = read_csv_from_bytesio(files)
+        assert int(content_rows) == length
+
+
+@mark.skipif(**skip_version_022)
 def test_upload_to_cortex_chamada_nova(save_file_temp_data):
     from time import sleep
 
@@ -224,3 +316,58 @@ def test_delete_from_cortex(upload_data_to_cortex):
     )
 
     assert response == HTTPStatus.OK
+
+
+@mark.skipif(**skip_version_022)
+def test_get_exported_file_info_response_is_list():
+    response = PyCortex.get_exported_file_info(
+        platform_url=os.getenv("exported_platform_url"),
+        username=os.getenv("username"),
+        password=os.getenv("password"),
+        filters={
+            "filters": [
+                {"user.login": {"EQUALS": "qualidade.ds"}},
+            ],
+            "rangeStart": "2023-12-27",
+            "rangeEnd": "2023-12-28",
+        },
+    )
+
+    assert isinstance(response, list)
+
+
+@mark.skipif(**skip_version_022)
+@mark.parametrize("operation_id", ["b15f6536fa734c7ba2086af08d9b2b8d", "b969bc5a6d434708b6912e85c7654916"])
+def test_download_exported_file_from_data_credit(operation_id):
+    response = PyCortex.download_exported_file(
+        platform_url=os.getenv("exported_platform_url"),
+        username=os.getenv("username"),
+        password=os.getenv("password"),
+        operation_id=operation_id,
+    )
+
+    assert "url" in response.json().keys()
+
+
+@mark.skipif(**skip_version_022)
+def test_download_exported_file_with_contacts():
+    response = PyCortex.download_exported_file(
+        platform_url=os.getenv("exported_platform_url"),
+        username=os.getenv("username"),
+        password=os.getenv("password"),
+        operation_id="b15f6536fa734c7ba2086af08d9b2b8d",
+    )
+
+    assert "ctx-static" in response.json()["url"]
+
+
+@mark.skipif(**skip_version_022)
+def test_download_exported_file_without_contacts():
+    response = PyCortex.download_exported_file(
+        platform_url=os.getenv("exported_platform_url"),
+        username=os.getenv("username"),
+        password=os.getenv("password"),
+        operation_id="b969bc5a6d434708b6912e85c7654916",
+    )
+
+    assert "platform-data-credit-control-shared" in response.json()["url"]
