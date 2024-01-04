@@ -224,6 +224,29 @@ def test_download_from_cortex_nao_passando_cube_name_cube_id():
 
 
 @mark.skipif(**skip_version_022)
+def test_download_from_cortex_passando_cube_passando_parametros():
+    files, content_rows = PyCortex.download_from_cortex(
+        cube_id=os.getenv("cube_id"),
+        platform_url=os.getenv("platform_url"),
+        username=os.getenv("username"),
+        password=os.getenv("password"),
+        file_object=BytesIO(),
+        columns=[
+            "ID Cortex",
+            "Data de publicação",
+        ],
+        filters=[
+            ["Data", "20/05/2023-21/05/2023"],
+        ],
+        delimiter=";",
+        quote="'",
+    )
+    files.seek(0)
+    length = read_csv_from_bytesio(files)
+    assert int(content_rows) == length
+
+
+@mark.skipif(**skip_version_022)
 def test_upload_to_cortex_chamada_nova(save_file_temp_data):
     from time import sleep
 
