@@ -299,6 +299,7 @@ class PyCortex:
         cube_name: Optional[str] = None,
         filters: Optional[List] = None,
         columns: Union[List, str] = "*",
+        **kwargs,
     ) -> Any:
         if not isinstance(file_object, BytesIO):
             file_object = open(file_object, "wb")  # type: ignore
@@ -314,10 +315,10 @@ class PyCortex:
 
             payload = {
                 "cube": cube,
-                "charset": cls.data_format["charset"],
-                "delimiter": cls.data_format["delimiter"],
-                "quote": cls.data_format["quote"],
-                "escape": cls.data_format["escape"],
+                "charset": kwargs.get("charset", cls.data_format["charset"]),
+                "delimiter": kwargs.get("delimiter", cls.data_format["delimiter"]),
+                "quote": kwargs.get("quote", cls.data_format["quote"]),
+                "escape": kwargs.get("escape", cls.data_format["escape"]),
             }
 
             if isinstance(columns, List):
