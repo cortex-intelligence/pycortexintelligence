@@ -387,7 +387,7 @@ class PyCortex:
         payload = {"cube": f'{{"id": "{cube_id}"}}', "filters": list()}
 
         if filters is None:
-            payload["filters"] = [{"name": "# Records", "type": "SIMPLE", "value": 1}]
+            payload["filters"] = json.dumps([{"name": "# Records", "type": "SIMPLE", "value": 1}])
 
         if filters is not None:
             payload["filters"] = cls.make_filter(filters)
@@ -395,12 +395,37 @@ class PyCortex:
         delete_url = f"https://{platform_url}/service/integration-cube-service.delete"
 
         response = requests.get(delete_url, params=payload, headers=auth_header)
-
         if response.status_code == HTTPStatus.OK:
             return response.status_code
 
         if response.status_code != HTTPStatus.OK:
             raise ValueError(f"O status code recebido, foi: {response.status_code}\n {response.content}")
+
+    @classmethod
+    def cube_creation(
+        cls, platform_url: str, username: str, password: str, table_name: str, dimensions: list, **kwargs
+    ):
+        auth_header = cls.platform_auth(platform_url, username, password, return_user_id=True)
+        url = f"https://{platform_url}/controller/cube/create?"
+        data = {
+            "name": table_name,
+            "creditControlEnabled": kwargs.get("credit_control_enabled", False),
+            "pendingPublish": kwargs.get("pending_publish", False),
+            "dimensions": dimensions,
+            "permissions": [{"editor": True, "groupId": auth_header["x-authorization-user-id"]}],
+        }
+        if kwargs.get("cloud_storage_path", False):
+            data["cloud_storage_path"] = kwargs["cloud_storage_path"]
+
+        params = {"async": kwargs.get("async", "true")}
+
+        resp = requests.post(url, headers=auth_header, json=data, params=params)
+        if resp.status_code != HTTPStatus.OK:
+            raise Exception(
+                "Não foi possível criar o cubo.\n" f"O status retornado foi: {resp.status_code}\n" f"{resp.text}"
+            )
+
+        return resp.json()
 
     @staticmethod
     def _make_download_url(platform_url: str):

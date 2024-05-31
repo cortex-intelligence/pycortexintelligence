@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [1.2.2] - 2024-05-31
+
+### Added
+- Função Criação de cubo na plataforma cortex.
+- Ajuste na função de delete permitindo a deleção integral do cubo.
+
 ## [1.2.1] - 2024-01-04
 
 ### Added
