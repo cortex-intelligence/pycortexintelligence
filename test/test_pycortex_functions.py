@@ -342,6 +342,18 @@ def test_delete_from_cortex(upload_data_to_cortex):
 
 
 @mark.skipif(**skip_version_022)
+def test_delete_from_cortex_all_data(upload_data_to_cortex):
+    response = PyCortex.delete_from_cortex(
+        cube_id=os.getenv("cube_id"),
+        platform_url=os.getenv("platform_url"),
+        username=os.getenv("username"),
+        password=os.getenv("password"),
+    )
+
+    assert response == HTTPStatus.OK
+
+
+@mark.skipif(**skip_version_022)
 def test_get_exported_file_info_response_is_list():
     response = PyCortex.get_exported_file_info(
         platform_url=os.getenv("exported_platform_url"),
