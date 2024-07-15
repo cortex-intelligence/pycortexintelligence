@@ -4,7 +4,10 @@ import logging
 from http import HTTPStatus
 from io import BufferedWriter, BytesIO
 from typing import Any, BinaryIO, Dict, List, Optional, Union
-
+import urllib3
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.poolmanager import PoolManager
+import ssl
 import requests
 
 from pycortexintelligence.core.messages import (
@@ -12,6 +15,12 @@ from pycortexintelligence.core.messages import (
     ERROR_ARGUMENTS_VALIDATION,
 )
 
+class LegacyAdapter(HTTPAdapter):
+    def init_poolmanager(self, *args, **kwargs):
+        context = ssl.create_default_context()
+        context.set_ciphers('DEFAULT@SECLEVEL=1')
+        kwargs['ssl_context'] = context
+        return super(LegacyAdapter, self).init_poolmanager(*args, **kwargs)
 
 class ApplicationTenantFilter(logging.Filter):
     def __init__(self, application_name, tenant):
@@ -36,6 +45,7 @@ class LoadExecution:
         executor_name,
         file_like_object,
         data_format,
+        custom_loadmanager_url,
     ):
         self.cube_id = cube_id
         self.header = header
@@ -44,6 +54,8 @@ class LoadExecution:
         self.executor_name = executor_name
         self.file_like_object = file_like_object
         self.data_format = data_format
+        self.loadmanager_url = custom_loadmanager_url if custom_loadmanager_url else loadmanager_url
+        
 
     def start_process(self):
         endpoint = self.loadmanager_url + "/execution/" + self.execution_id + "/start"
@@ -51,8 +63,9 @@ class LoadExecution:
         response.raise_for_status()
 
     @classmethod
-    def execution_history(cls, headers, execution_id):
-        endpoint = cls.loadmanager_url + "/execution/" + execution_id
+    def execution_history(cls, headers, execution_id, custom_loadmanager_url=None):
+        loadmanager_url = custom_loadmanager_url if custom_loadmanager_url else cls.loadmanager_url
+        endpoint = loadmanager_url + "/execution/" + execution_id
         response = requests.get(endpoint, headers=headers)
         response.raise_for_status()
         return response.json()
@@ -121,6 +134,8 @@ class PyCortex:
         password: str,
         file_object: Union[str, BinaryIO],
         is_file=True,
+        custom_loadmanager_url=Union[str, bool],
+        legacy=bool,
         **kwargs,
     ) -> Dict:
         if is_file and isinstance(file_object, str):
@@ -137,8 +152,10 @@ class PyCortex:
         file_processing_timeout = int(kwargs.get("timeout", cls.file_processing_timeout))
         ignore_validation_errors = kwargs.get("ignore_errors", cls.ignore_validation_errors)
         executor_name = kwargs.get("executor_name", cls.executor_name)
+        custom_loadmanager_url = custom_loadmanager_url if custom_loadmanager_url else False
+        legacy = legacy if legacy else False
 
-        header = cls.platform_auth(platform_url, username, password)
+        header = cls.platform_auth(platform_url, username, password,legacy=legacy)
 
         load_execution = LoadExecution(
             cube_id=cube_id,
@@ -148,11 +165,15 @@ class PyCortex:
             executor_name=executor_name,
             file_like_object=file_object,
             data_format=cls.data_format,
+            custom_loadmanager_url=custom_loadmanager_url
         )
         execution_id = load_execution.create_load_execution()
         load_execution.send_file()
         load_execution.start_process()
-        return LoadExecution.execution_history(headers=header, execution_id=execution_id)
+        if legacy:
+            return LoadExecution.execution_history(headers=header, execution_id=execution_id, custom_loadmanager_url=custom_loadmanager_url)
+        else: 
+            return LoadExecution.execution_history(headers=header, execution_id=execution_id)
 
     @staticmethod
     def make_filter(filters: List):
@@ -185,14 +206,20 @@ class PyCortex:
         return json.dumps(filters_download, ensure_ascii=False)
 
     @staticmethod
-    def platform_auth(platform_url: str, username: str, password: str, return_user_id=False):
+    def platform_auth(platform_url: str, username: str, password: str, return_user_id=False, legacy=False):
+        if legacy:
+            session = requests.Session()
+            session.mount('https://', LegacyAdapter())
         if not (username and password and platform_url):
             raise ValueError(ERROR_ARGUMENTS_VALIDATION)
 
         credentials = {"login": username, "password": password}
 
         auth_endpoint = f"https://{platform_url}/service/integration-authorization-service.login"
-        auth_post = requests.post(auth_endpoint, json=credentials).json()
+        if legacy:
+            auth_post = session.post(auth_endpoint, json=credentials).json()
+        else:
+            auth_post = requests.post(auth_endpoint, json=credentials).json()
         if return_user_id:
             return {
                 "x-authorization-user-id": auth_post["userId"],
@@ -472,3 +499,4 @@ def upload_to_cortex(**kwargs):
         password=kwargs["password"],
         file_object=kwargs["file_path"],
     )
+z
