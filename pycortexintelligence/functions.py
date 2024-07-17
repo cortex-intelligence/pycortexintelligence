@@ -499,4 +499,3 @@ def upload_to_cortex(**kwargs):
         password=kwargs["password"],
         file_object=kwargs["file_path"],
     )
-z
