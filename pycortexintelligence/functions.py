@@ -6,7 +6,6 @@ from io import BufferedWriter, BytesIO
 from typing import Any, BinaryIO, Dict, List, Optional, Union
 import urllib3
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.poolmanager import PoolManager
 import ssl
 import requests
 
@@ -134,8 +133,8 @@ class PyCortex:
         password: str,
         file_object: Union[str, BinaryIO],
         is_file=True,
-        custom_loadmanager_url=Union[str, bool],
-        legacy=bool,
+        custom_loadmanager_url: Union[str, bool]=None,
+        legacy=False,
         **kwargs,
     ) -> Dict:
         if is_file and isinstance(file_object, str):
@@ -206,7 +205,7 @@ class PyCortex:
         return json.dumps(filters_download, ensure_ascii=False)
 
     @staticmethod
-    def platform_auth(platform_url: str, username: str, password: str, return_user_id=False, legacy=False):
+    def platform_auth(platform_url: str, username: str, password: str, return_user_id=False, legacy):
         if legacy:
             session = requests.Session()
             session.mount('https://', LegacyAdapter())
