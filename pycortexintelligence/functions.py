@@ -205,7 +205,7 @@ class PyCortex:
         return json.dumps(filters_download, ensure_ascii=False)
 
     @staticmethod
-    def platform_auth(platform_url: str, username: str, password: str, return_user_id=False, legacy):
+    def platform_auth(platform_url: str, username: str, password: str, legacy: bool = False, return_user_id: bool = False):
         if legacy:
             session = requests.Session()
             session.mount('https://', LegacyAdapter())
